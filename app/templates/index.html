@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Momentum Watcher — Dashboard</title>
+
+  <!-- Tailwind -->
+
+  <style>
+    .card {
+      background: #131a22;
+      border-radius: 0.75rem;
+      padding: 0.75rem 1rem;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.25);
+      border: 1px solid #0f172a;
+      min-height: 280px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .thin-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+    .thin-scroll::-webkit-scrollbar-thumb { background: #2a3442; border-radius: 8px; }
+
+    .btn-toggle {
+      padding: 0.15rem 0.6rem;
+      border-radius: 0.375rem;
+      border: 1px solid #334155;
+      color: #cbd5e1;
+      font-size: 0.75rem;
+      background: transparent;
+      transition: background 0.2s;
+    }
+    .btn-toggle:hover { background: #1b2430; }
+    .btn-active {
+      background-color: rgba(14,165,233,0.2);
+      border-color: #0ea5e9;
+      color: #0ea5e9;
+    }
+
+    @media (max-width: 768px) {
+      header h1 {
+        font-size: 1.25rem;
+      }
+      .btn-toggle {
+        font-size: 0.7rem;
+        padding: 0.15rem 0.5rem;
+      }
+      header {
+        padding-top: 0.4rem !important;
+        padding-bottom: 0.4rem !important;
+      }
+    }
+  </style>
+<!-- Tailwind (compiled locally) -->
+<link rel="stylesheet" href="{{ url_for('static', path='css/output.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+
+ 
+</head>
+
+<body class="bg-bg text-text min-h-screen flex flex-col">
+
+  <!-- ===== HEADER ===== -->
+  <header class="border-b border-slate-800 px-4 md:px-8 py-4 bg-bg">
+    <div class="grid grid-cols-3 items-center">
+      <!-- Left -->
+      <div class="flex flex-col items-start">
+        <h1 class="text-xl font-semibold text-accent leading-tight">Momentum Watcher</h1>
+        <div class="flex gap-2 mt-1">
+          <button id="btn-15m" class="btn-toggle btn-active">15-min</button>
+          <button id="btn-realtime" class="btn-toggle">Real-time</button>
+        </div>
+      </div>
+
+      <!-- Center -->
+      <div class="flex justify-center">
+        <div class="text-sm md:text-base font-mono text-slate-300" id="ny-time">NY: --:--:--</div>
+      </div>
+
+      <!-- Right -->
+      <div class="flex justify-end items-center gap-3">
+        <button id="sound-toggle" class="text-slate-400 hover:text-accent" title="Toggle sound">🔊</button>
+        <button class="text-slate-400 hover:text-accent text-lg" title="Account">👤</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== MAIN GRID ===== -->
+  <main class="flex-grow mx-auto px-3 md:px-6 py-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 auto-rows-fr w-full">
+
+    <!-- Momentum -->
+    <section class="card">
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="text-base font-semibold text-accent">Momentum (Flashing)</h2>
+        <button class="text-slate-400 hover:text-accent text-sm" title="Filter settings" onclick="openFilter('momentum')">⚙️</button>
+      </div>
+      <div class="overflow-auto thin-scroll flex-grow">
+        <table class="w-full text-xs md:text-sm">
+          <thead class="text-slate-400 border-b border-slate-800">
+            <tr class="text-left">
+              <th class="py-1 pr-2">Symbol</th>
+              <th class="py-1 pr-2">Price</th>
+              <th class="py-1 pr-2">% Chg</th>
+              <th class="py-1 pr-2">5m</th>
+              <th class="py-1 pr-2">Float</th>
+              <th class="py-1 pr-2">Volume</th>
+              <th class="py-1 pr-2">Spr(%)</th>
+              <th class="py-1">Time</th>
+            </tr>
+          </thead>
+          <tbody id="momentum-body">
+            <tr><td colspan="8" class="py-2 text-slate-500 text-center">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- HOD -->
+    <section class="card">
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="text-base font-semibold text-accent">High of Day (HOD)</h2>
+        <button class="text-slate-400 hover:text-accent text-sm" title="Filter settings" onclick="openFilter('hod')">⚙️</button>
+      </div>
+      <div class="overflow-auto thin-scroll flex-grow">
+        <table class="w-full text-xs md:text-sm">
+          <thead class="text-slate-400 border-b border-slate-800">
+            <tr class="text-left">
+              <th class="py-1 pr-2">Symbol</th>
+              <th class="py-1 pr-2">Price</th>
+              <th class="py-1 pr-2">% Chg</th>
+              <th class="py-1 pr-2">Float</th>
+              <th class="py-1 pr-2">Spr(%)</th>
+              <th class="py-1 pr-2">Volume</th>
+              <th class="py-1">Time</th>
+            </tr>
+          </thead>
+          <tbody id="hod-body">
+            <tr><td colspan="7" class="py-2 text-slate-500 text-center">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Chart 1m -->
+    <section class="card">
+      <h2 class="text-base font-semibold text-accent mb-3">Chart (1m)</h2>
+      <div id="chart-1m" class="flex-grow bg-soft rounded-lg flex items-center justify-center text-slate-500 text-sm">
+        Chart 1m Placeholder
+      </div>
+    </section>
+
+    <!-- Stock Overview -->
+    <section class="card">
+      <h2 class="text-base font-semibold text-accent mb-3">Stock Overview</h2>
+      <div id="overview" class="text-slate-400 text-sm flex-grow">Select a symbol to see details.</div>
+    </section>
+
+    <!-- News -->
+    <section class="card">
+      <h2 class="text-base font-semibold text-accent mb-3">News</h2>
+      <div id="news" class="space-y-2 thin-scroll overflow-auto text-xs md:text-sm text-slate-400 flex-grow">
+        Select a symbol to load news.
+      </div>
+    </section>
+
+    <!-- Chart 5m -->
+    <section class="card">
+      <h2 class="text-base font-semibold text-accent mb-3">Chart (5m)</h2>
+      <div id="chart-5m" class="flex-grow bg-soft rounded-lg flex items-center justify-center text-slate-500 text-sm">
+        Chart 5m Placeholder
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="text-center text-slate-600 text-xs py-3 border-t border-slate-900">
+    © <span id="year"></span> Momentum Watcher. All rights reserved.
+  </footer>
+
+  <!-- ===== FILTER MODAL ===== -->
+  <div id="filter-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-card p-6 rounded-xl w-80 border border-slate-800 shadow-soft">
+      <h3 class="text-lg font-semibold text-accent mb-4">Filter Settings</h3>
+      <form id="filter-form" class="space-y-3">
+        <div>
+          <label class="text-sm text-slate-400">Min Price ($)</label>
+          <input type="number" id="filter-min-price" class="w-full mt-1 bg-soft border border-slate-700 rounded-md px-2 py-1 text-sm text-slate-200" placeholder="e.g. 1">
+        </div>
+        <div>
+          <label class="text-sm text-slate-400">Max Price ($)</label>
+          <input type="number" id="filter-max-price" class="w-full mt-1 bg-soft border border-slate-700 rounded-md px-2 py-1 text-sm text-slate-200" placeholder="e.g. 10">
+        </div>
+        <div>
+          <label class="text-sm text-slate-400">Max Float (M)</label>
+          <input type="number" id="filter-max-float" class="w-full mt-1 bg-soft border border-slate-700 rounded-md px-2 py-1 text-sm text-slate-200" placeholder="e.g. 10">
+        </div>
+        <div>
+          <label class="text-sm text-slate-400">Min Volume</label>
+          <input type="number" id="filter-min-volume" class="w-full mt-1 bg-soft border border-slate-700 rounded-md px-2 py-1 text-sm text-slate-200" placeholder="e.g. 10000">
+        </div>
+        <div class="flex justify-end gap-3 pt-4">
+          <button type="button" class="btn-toggle" onclick="closeFilter()">Cancel</button>
+          <button type="submit" class="btn-toggle btn-active">Apply</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== SCRIPTS ===== -->
+  <script>
+    // NY time
+    function updateNYTime() {
+      const opts = { timeZone: "America/New_York", hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' };
+      const now = new Date().toLocaleTimeString("en-US", opts);
+      document.getElementById("ny-time").textContent = `NY: ${now}`;
+    }
+    setInterval(updateNYTime, 1000);
+    updateNYTime();
+
+    // Toggle buttons
+    const btn15 = document.getElementById('btn-15m');
+    const btnRT = document.getElementById('btn-realtime');
+    btn15.addEventListener('click', () => { btn15.classList.add('btn-active'); btnRT.classList.remove('btn-active'); });
+    btnRT.addEventListener('click', () => { btnRT.classList.add('btn-active'); btn15.classList.remove('btn-active'); });
+
+    // Sound toggle
+    const soundToggle = document.getElementById('sound-toggle');
+    let soundOn = true;
+    soundToggle.addEventListener('click', () => {
+      soundOn = !soundOn;
+      soundToggle.textContent = soundOn ? '🔊' : '🔈';
+    });
+
+    // Filter modal
+    const modal = document.getElementById('filter-modal');
+    function openFilter(type) { modal.classList.remove('hidden'); modal.dataset.target = type; }
+    function closeFilter() { modal.classList.add('hidden'); }
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeFilter(); });
+
+    document.getElementById('filter-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      closeFilter();
+    });
+
+    document.getElementById('year').textContent = new Date().getFullYear();
+  </script>
+  <script src="/static/js/hod.js"></script>
+
+</body>
+</html>

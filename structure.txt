@@ -1,0 +1,37 @@
+momentum_watcher/
+│
+├── app/
+│   ├── __init__.py
+│   ├── main.py                  # FastAPI entry point
+│   │
+│   ├── api/                     # All REST endpoints
+│   │   ├── __init__.py
+│   │   ├── routes_momentum.py   # /flashing
+│   │   ├── routes_hod.py        # /hod
+│   │   ├── routes_overview.py   # /overview/{symbol}
+│   │   └── routes_news.py       # /news/{symbol}
+│   │
+│   ├── services/                # Logic layer (your Alpaca websocket, filters, etc.)
+│   │   ├── __init__.py
+│   │   ├── alpaca_ws.py         # WebSocket listener, streaming tick data
+│   │   ├── data_cache.py        # Store latest quotes in memory
+│   │   ├── filters.py           # Price/float/volume/momentum filters
+│   │   └── utils.py             # Shared helpers (time, formatting, etc.)
+│   │
+│   ├── templates/               # Frontend HTML (served by FastAPI)
+│   │   └── index.html           # main dashboard page
+│   │
+│   ├── static/                  # JS, CSS, and assets
+│   │   ├── js/
+│   │   ├── css/
+│   │   └── images/
+│   │
+│   └── core/
+│       ├── config.py            # environment vars, API keys, settings
+│       └── logger.py            # logging setup
+│
+├── tests/
+│   └── test_api.py
+│
+├── requirements.txt
+└── README.md
