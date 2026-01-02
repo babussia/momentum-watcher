@@ -143,11 +143,9 @@
     </section>
 
     <!-- Chart 1m -->
-    <section class="card">
-      <h2 class="text-base font-semibold text-accent mb-3">Chart (1m)</h2>
-      <div id="chart-1m" class="flex-grow bg-soft rounded-lg flex items-center justify-center text-slate-500 text-sm">
-        Chart 1m Placeholder
-      </div>
+    <section class="card chart-card">
+      <h2 class="text-base font-semibold text-accent mb-2">Chart (1m)</h2>
+      <div id="chart-1m" class="chart-container"></div>
     </section>
 
     <!-- Stock Overview -->
@@ -167,10 +165,9 @@
     <!-- Chart 5m -->
     <section class="card">
       <h2 class="text-base font-semibold text-accent mb-3">Chart (5m)</h2>
-      <div id="chart-5m" class="flex-grow bg-soft rounded-lg flex items-center justify-center text-slate-500 text-sm">
-        Chart 5m Placeholder
-      </div>
+      <div id="chart-5m" class="h-[420px] bg-soft rounded-lg"></div>
     </section>
+
   </main>
 
   <!-- ===== FOOTER ===== -->
@@ -245,6 +242,10 @@
 
     document.getElementById('year').textContent = new Date().getFullYear();
   </script>
+  <script src="https://s3.tradingview.com/tv.js"></script>
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/charts.js"></script>
+  <script src="/static/js/momentum.js"></script>
   <script src="/static/js/hod.js"></script>
 
 </body>

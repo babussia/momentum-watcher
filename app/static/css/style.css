@@ -26,3 +26,26 @@
   transition: background-color 0.6s ease;
 }
 
+@keyframes pulseOnce {
+  0% { background-color: rgba(34,197,94,0.25); }
+  100% { background-color: transparent; }
+}
+
+.animate-pulse-once {
+  animation: pulseOnce 0.8s ease-out;
+}
+
+/* momentum highlight */
+.momentum-flash {
+  animation: momentumFlash 1.2s ease-out;
+}
+
+@keyframes momentumFlash {
+  0% {
+    background-color: rgba(34, 197, 94, 0.35);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+

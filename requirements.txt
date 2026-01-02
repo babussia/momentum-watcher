@@ -4,3 +4,4 @@ python-dotenv
 websockets
 jinja2
 requests
+beautifulsoup4

@@ -1,51 +1,59 @@
 import logging
 from datetime import datetime, timezone
-import requests
 from zoneinfo import ZoneInfo
+import aiohttp
+import asyncio
+
 from app.core.config import ALPACA_API_KEY, ALPACA_SECRET_KEY
-from app.services.data_cache import cumulative_volume, load_cached_filtered_tickers  # ⬅️ assumes helper
+from app.services.data_cache import cumulative_volume
 
-def is_market_session():
-    """Return True if current time is between 4AM–8PM Eastern Time."""
-    ET = ZoneInfo("America/New_York")
-    now_et = datetime.now(ET).time()
-    return now_et >= datetime(1, 1, 1, 4, 0).time() and now_et <= datetime(1, 1, 1, 20, 0).time()
 
-def preload_volume():
-    """Prefetch cumulative volume from 4 AM ET to now for tracked tickers."""
+async def preload_volume():
     logging.info("📊 Preloading volume since 4 AM ET...")
 
-    # Base tickers (used outside market hours)
-    tickers = ["AAPL", "TSLA", "NVDA", "AMD", "PLTR", "GME"]
+    # ----------------------------------------------------------
+    # Load cached filtered tickers (DO NOT RUN FILTER AGAIN)
+    # ----------------------------------------------------------
+    from app.services.data_cache import load_cached_filtered_tickers
+    raw_symbols = load_cached_filtered_tickers()
 
-    # 🔁 If within 4AM–8PM ET, load *all filtered tickers*
-    if is_market_session():
-        try:
-            filtered = load_cached_filtered_tickers()  # your own helper that reads from cache/json
-            if filtered:
-                tickers = filtered
-                logging.info(f"🕓 Within 4AM–8PM ET — preloading {len(tickers)} filtered tickers.")
-            else:
-                logging.warning("⚠️ No cached filtered tickers found, using default list.")
-        except Exception as e:
-            logging.error(f"❌ Failed to load cached tickers: {e}")
+    if not raw_symbols:
+        logging.warning("⚠️ No cached tickers — preload skipped.")
+        return
+
+    # raw_symbols is list of dicts → extract ["symbol"]
+    symbols = [
+        s["symbol"] if isinstance(s, dict) else s
+        for s in raw_symbols
+    ]
+
+    logging.info(f"📦 Preloading volume for {len(symbols)} symbols")
+
+    # ----------------------------------------------------------
+    # Build timestamps (4AM ET → now)
+    # ----------------------------------------------------------
+    ET = ZoneInfo("America/New_York")
+    now_et = datetime.now(ET)
+
+    start_et = now_et.replace(hour=4, minute=0, second=0, microsecond=0)
+    start_utc = start_et.astimezone(timezone.utc).isoformat()
+    end_utc = now_et.astimezone(timezone.utc).isoformat()
+
+    # Alpaca allows 50 symbols per request
+    batches = [symbols[i:i + 50] for i in range(0, len(symbols), 50)]
 
     headers = {
         "APCA-API-KEY-ID": ALPACA_API_KEY,
         "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY,
     }
-    url = "https://data.alpaca.markets/v2/stocks/bars"
 
-    ET = ZoneInfo("America/New_York")
-    now_et = datetime.now(ET)
-    start_et = now_et.replace(hour=4, minute=0, second=0, microsecond=0)
-    start_utc = start_et.astimezone(timezone.utc).isoformat()
-    end_utc = now_et.astimezone(timezone.utc).isoformat()
-
-    for symbol in tickers:
-        try:
+    # ----------------------------------------------------------
+    # Request historical bars
+    # ----------------------------------------------------------
+    async with aiohttp.ClientSession() as session:
+        for batch in batches:
             params = {
-                "symbols": symbol,
+                "symbols": ",".join(batch),
                 "timeframe": "1Min",
                 "start": start_utc,
                 "end": end_utc,
@@ -53,20 +61,34 @@ def preload_volume():
                 "limit": 10000,
             }
 
-            r = requests.get(url, headers=headers, params=params, timeout=10)
-            r.raise_for_status()
-            data = r.json()
+            try:
+                async with session.get(
+                    "https://data.alpaca.markets/v2/stocks/bars",
+                    headers=headers,
+                    params=params
+                ) as r:
 
-            bars = data.get("bars", {}).get(symbol, [])
-            if not bars:
-                logging.warning(f"⚠️ No volume data for {symbol}")
-                continue
+                    if r.status != 200:
+                        text = await r.text()
+                        logging.error(
+                            f"❌ Error fetching batch {batch[:3]}... "
+                            f"HTTP {r.status} → {text}"
+                        )
+                        continue
 
-            total_vol = sum(b.get("v", 0) for b in bars)
-            cumulative_volume[symbol] = total_vol  # ✅ shared dictionary
-            logging.info(f"✅ {symbol} preload volume: {total_vol:,}")
+                    data = await r.json()
+                    bars_data = data.get("bars", {})
 
-        except Exception as e:
-            logging.error(f"❌ Failed to preload {symbol}: {e}")
+                    if not bars_data:
+                        continue
+
+                    for symbol, bars in bars_data.items():
+                        total = sum(b.get("v", 0) for b in bars)
+                        cumulative_volume[symbol] = total
+
+            except Exception as e:
+                logging.error(f"❌ Exception during preload for {batch[:3]}: {e}")
+
+            await asyncio.sleep(0.05)  # small safety delay
 
     logging.info("✅ Preload complete — volumes ready for live updates.")
