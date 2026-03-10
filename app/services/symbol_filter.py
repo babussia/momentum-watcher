@@ -1,178 +1,281 @@
 import os
 import json
-import requests
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from time import sleep
-from datetime import datetime
+import requests
+from math import ceil
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# ===============================
-# CONFIG
-# ===============================
+# ======================================================
+# ENV / KEYS
+# ======================================================
+
 load_dotenv()
 
-ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
-ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
-FMP_API_KEY = os.getenv("FMP_API_KEY")
+ALPACA_KEY = os.getenv("ALPACA_API_KEY")
+ALPACA_SECRET = os.getenv("ALPACA_SECRET_KEY")
+FMP_KEY = os.getenv("FMP_API_KEY")
 
-HEADERS = {
-    "APCA-API-KEY-ID": ALPACA_API_KEY,
-    "APCA-API-SECRET-KEY": ALPACA_SECRET_KEY,
+ALP_HEADERS = {
+    "APCA-API-KEY-ID": ALPACA_KEY,
+    "APCA-API-SECRET-KEY": ALPACA_SECRET,
 }
 
-CACHE_FLOATS = {}
 ET = ZoneInfo("America/New_York")
-PRICE_FILTER_CACHE = "cache/filtered_symbols.json"
+
+# ======================================================
+# CACHE FILES
+# ======================================================
+
+CACHE_RAW = "cache/alpaca_tradable.json"
+CACHE_PREV = "cache/prevclose_stage.json"
+CACHE_PRICE = "cache/price_stage.json"
+CACHE_FINAL = "cache/filtered_symbols.json"
+PREV_CLOSE_CACHE = "cache/prev_close_cache.json"
+
+# ======================================================
+# FILTER RULES
+# ======================================================
+
+MIN_PRICE = 0.30
+MAX_PRICE = 10.00
+MAX_FLOAT = 10.0  # million
+
+# ======================================================
+# LOGGING
+# ======================================================
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
-MIN_PRICE = 0.1
-MAX_PRICE = 10.0
-MAX_FLOAT_MILLIONS = 10.0
+# ======================================================
+# HELPERS
+# ======================================================
 
+def _ensure_cache_dir():
+    os.makedirs("cache", exist_ok=True)
 
-# =======================
-# 1️⃣ FETCH ALL SYMBOLS
-# =======================
-def get_all_symbols():
-    """Get all active tradable symbols from Alpaca."""
-    logging.info("📊 Fetching all tradable tickers from Alpaca...")
-    url = "https://api.alpaca.markets/v2/assets"
-    r = requests.get(url, headers=HEADERS)
-    r.raise_for_status()
-    assets = r.json()
-    return [
-        a["symbol"]
-        for a in assets
-        if a.get("status") == "active"
-        and a.get("tradable")
-        and a.get("exchange") in ["NYSE", "NASDAQ", "AMEX"]
-    ]
+def _today_et() -> str:
+    return datetime.now(ET).date().isoformat()
 
-
-# =======================
-# 2️⃣ PRICE FILTER (FAST)
-# =======================
-def get_price(symbol):
-    """Fetch last trade price for a symbol (returns None if fails)."""
+def _read_json(path: str):
     try:
-        url = f"https://data.alpaca.markets/v2/stocks/{symbol}/quotes/latest"
-        r = requests.get(url, headers=HEADERS, timeout=5)
-        if r.status_code != 200:
-            return None
-        data = r.json()
-        price = data.get("quote", {}).get("ap") or data.get("quote", {}).get("bp")
-        return price
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
     except Exception:
         return None
 
+def _write_json(path: str, data):
+    _ensure_cache_dir()
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
 
-def filter_by_price(symbols):
-    """Return only symbols within target price range."""
-    valid = []
-    with ThreadPoolExecutor(max_workers=50) as executor:
-        futures = {executor.submit(get_price, s): s for s in symbols}
-        for i, future in enumerate(as_completed(futures), 1):
-            symbol = futures[future]
-            price = future.result()
-            if price and MIN_PRICE <= price <= MAX_PRICE:
-                valid.append(symbol)
-            if i % 500 == 0:
-                logging.info(
-                    f"💵 Checked {i}/{len(symbols)} symbols — {len(valid)} in range so far."
-                )
-    logging.info(f"✅ Price filter done — {len(valid)} symbols under ${MAX_PRICE}.")
-    return valid
+def _stage_is_today(path: str) -> bool:
+    obj = _read_json(path)
+    if not isinstance(obj, dict):
+        return False
+    return obj.get("date") == _today_et()
 
+def _load_stage_symbols(path: str):
+    obj = _read_json(path)
+    if isinstance(obj, dict) and isinstance(obj.get("symbols"), list):
+        return obj["symbols"]
+    return None
 
-# =======================
-# 3️⃣ FLOAT FILTER (CACHED)
-# =======================
-def get_float(symbol):
-    """Fetch float (in millions) from FMP v4/shares_float endpoint, cached."""
-    if symbol in CACHE_FLOATS:
-        return CACHE_FLOATS[symbol]
+def _utc_date_range(days_back: int):
+    today_utc = datetime.now(timezone.utc).date()
+    start_utc = today_utc - timedelta(days=days_back)
+    return start_utc.isoformat(), today_utc.isoformat()
+
+# ======================================================
+# STEP 1 - GET TRADABLE TICKERS
+# ======================================================
+
+def get_tradable():
+    obj = _read_json(CACHE_RAW)
+    if isinstance(obj, dict) and obj.get("date") == _today_et():
+        logging.info(f"💾 Using cached TRADABLE: {len(obj['symbols'])}")
+        return obj["symbols"]
+
+    logging.info("📡 Fetching Alpaca tradable tickers...")
+    r = requests.get(
+        "https://api.alpaca.markets/v2/assets",
+        headers=ALP_HEADERS,
+        timeout=15,
+    )
+    r.raise_for_status()
+
+    tradable = [
+        d["symbol"]
+        for d in r.json()
+        if d.get("tradable")
+        and d.get("status") == "active"
+        and d.get("exchange") in ["NYSE", "NASDAQ", "AMEX"]
+    ]
+
+    _write_json(CACHE_RAW, {"date": _today_et(), "symbols": tradable})
+    logging.info(f"✅ Tradable symbols: {len(tradable)}")
+    return tradable
+
+# ======================================================
+# STEP 2 - LAST CLOSE (BULK)
+# ======================================================
+
+def get_last_close_bulk(symbols, days_back=10):
+    if not symbols:
+        return {}
+
+    start, end = _utc_date_range(days_back)
+    sym_str = ",".join(symbols)
+
+    url = (
+        "https://data.alpaca.markets/v2/stocks/bars"
+        f"?symbols={sym_str}"
+        "&timeframe=1Day"
+        f"&start={start}"
+        f"&end={end}"
+        "&limit=10000"
+        "&adjustment=raw"
+        "&feed=sip"
+        "&sort=asc"
+    )
+
+    r = requests.get(url, headers=ALP_HEADERS, timeout=30)
+    if not r.ok:
+        return {}
+
+    data = r.json().get("bars", {})
+    out = {}
+
+    for sym in symbols:
+        bars = data.get(sym)
+        if not bars:
+            continue
+        last = bars[-1]
+        if last.get("c") is not None:
+            out[sym] = {
+                "close": last["c"],
+                "date": last["t"][:10],
+            }
+
+    return out
+
+# ======================================================
+# STEP 3 - FLOAT (THREAD-SAFE)
+# ======================================================
+
+def fmp_float_safe(symbol: str):
+    if not FMP_KEY:
+        return None
+
+    url = (
+        "https://financialmodelingprep.com/api/v4/shares_float"
+        f"?symbol={symbol}&apikey={FMP_KEY}"
+    )
 
     try:
-        url = f"https://financialmodelingprep.com/api/v4/shares_float?symbol={symbol}&apikey={FMP_API_KEY}"
         r = requests.get(url, timeout=5)
-        if r.status_code == 200:
-            data = r.json()
-            if isinstance(data, list) and len(data) > 0:
-                item = data[0]
-                float_val = item.get("floatShares") or item.get("freeFloat")
-                if float_val:
-                    float_mil = float_val / 1_000_000  # convert to millions
-                    CACHE_FLOATS[symbol] = float_mil
-                    return float_mil
-    except Exception as e:
-        logging.debug(f"⚠️ Error getting float for {symbol}: {e}")
-        pass
+        if r.status_code != 200:
+            return None
+
+        data = r.json()
+        if isinstance(data, list) and data:
+            fs = data[0].get("floatShares")
+            if fs is not None:
+                return fs / 1_000_000
+    except Exception:
+        return None
 
     return None
 
+# ======================================================
+# MAIN PIPELINE
+# ======================================================
 
-def filter_by_float(symbols):
-    """Filter by float size (< MAX_FLOAT_MILLIONS)."""
-    valid = []
-    with ThreadPoolExecutor(max_workers=10) as executor:  # respect FMP rate limits
-        futures = {executor.submit(get_float, s): s for s in symbols}
-        for i, future in enumerate(as_completed(futures), 1):
-            symbol = futures[future]
-            f = future.result()
-            if f and f <= MAX_FLOAT_MILLIONS:
-                valid.append(symbol)
-            if i % 50 == 0:
-                logging.info(
-                    f"🧮 Checked {i}/{len(symbols)} floats — {len(valid)} passed."
-                )
-            sleep(0.2)  # ~5 requests/sec = 300/min
-    logging.info(f"✅ Float filter done — {len(valid)} low-float stocks found.")
-    return valid
-
-
-# =======================
-# 4️⃣ MAIN ENTRY
-# =======================
 def get_filtered_symbols():
-    """Fetch all tradable tickers, then filter by price and float."""
+    today = _today_et()
 
-    # === Load same-day cache (if exists)
-    if os.path.exists(PRICE_FILTER_CACHE):
-        try:
-            with open(PRICE_FILTER_CACHE, "r") as f:
-                cache = json.load(f)
-            cache_date = cache.get("date")
-            today = datetime.now(ET).date().isoformat()
-            if cache_date == today:
-                cached_symbols = cache.get("symbols", [])
+    if _stage_is_today(CACHE_FINAL):
+        final_syms = _load_stage_symbols(CACHE_FINAL) or []
+        logging.info(f"💾 Using cached FINAL: {len(final_syms)}")
+        return final_syms
+
+    logging.info("🚀 Starting filtering pipeline")
+
+    price_stage = None
+
+    if _stage_is_today(CACHE_PRICE):
+        price_stage = _load_stage_symbols(CACHE_PRICE)
+        logging.info(f"💾 Using cached PRICE stage: {len(price_stage)}")
+
+    if price_stage is None:
+        if _stage_is_today(CACHE_PREV):
+            prev_stage = _load_stage_symbols(CACHE_PREV)
+        else:
+            syms = get_tradable()
+            prev_stage = []
+            prev_map = {}
+
+            batch = 200
+            for i in range(ceil(len(syms) / batch)):
+                chunk = syms[i * batch:(i + 1) * batch]
+                closes = get_last_close_bulk(chunk)
+
+                for sym, obj in closes.items():
+                    prev_stage.append({
+                        "symbol": sym,
+                        "prev_close": obj["close"],
+                        "bar_date": obj["date"],
+                    })
+                    prev_map[sym] = obj["close"]
+
+                logging.info(f"⏳ PrevClose batch {i+1}")
+
+            _write_json(CACHE_PREV, {"date": today, "symbols": prev_stage})
+            _write_json(PREV_CLOSE_CACHE, prev_map)
+
+        price_stage = [
+            x for x in prev_stage
+            if MIN_PRICE <= x["prev_close"] <= MAX_PRICE
+        ]
+
+        _write_json(CACHE_PRICE, {"date": today, "symbols": price_stage})
+        logging.info(f"✅ Price filter complete: {len(price_stage)}")
+
+    # ==================================================
+    # FLOAT FILTER (UPDATED)
+    # ==================================================
+
+    logging.info("📏 Filtering by float ≤ 10M (threaded)")
+    final = []
+    total = len(price_stage)
+    checked = 0
+
+    MAX_WORKERS = 8
+    LOG_EVERY = 50
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_map = {
+            executor.submit(fmp_float_safe, item["symbol"]): item
+            for item in price_stage
+        }
+
+        for future in as_completed(future_map):
+            item = future_map[future]
+            checked += 1
+
+            fl = future.result()
+            item["float"] = fl
+
+            if fl is None or fl <= MAX_FLOAT:
+                final.append(item)
+
+            if checked % LOG_EVERY == 0 or checked == total:
                 logging.info(
-                    f"💾 Loaded {len(cached_symbols)} cached float-filtered symbols from today."
+                    f"📏 Float stage: {checked}/{total} | passed {len(final)}"
                 )
-                return cached_symbols
-        except Exception:
-            pass
 
-    # === Step 1: Get all tradable tickers
-    all_symbols = get_all_symbols()
-
-    # === Step 2: Filter by price
-    under_10 = filter_by_price(all_symbols)
-
-    # === Step 3: Filter by float
-    low_float = filter_by_float(under_10)
-
-    # === Cache today's FINAL filtered list (price + float)
-    os.makedirs("cache", exist_ok=True)
-    with open(PRICE_FILTER_CACHE, "w") as f:
-        json.dump(
-            {"date": datetime.now(ET).date().isoformat(), "symbols": low_float}, f
-        )
-    logging.info(f"💽 Cached {len(low_float)} final filtered tickers for today.")
-
-    logging.info(
-        f"🏁 Final filtered list: {len(low_float)} symbols under ${MAX_PRICE} and under {MAX_FLOAT_MILLIONS}M float."
-    )
-    return low_float
+    _write_json(CACHE_FINAL, {"date": today, "symbols": final})
+    logging.info(f"🏁 FINAL COUNT: {len(final)}")
+    return final
