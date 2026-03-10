@@ -89,58 +89,88 @@
   <!-- ===== MAIN GRID ===== -->
   <main class="flex-grow mx-auto px-3 md:px-6 py-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 auto-rows-fr w-full">
 
-    <!-- Momentum -->
+  <!-- Momentum -->
+  <section class="card">
+    <div class="flex justify-between items-center mb-3">
+      <h2 class="text-base font-semibold text-accent">
+        Momentum <span class="text-xs text-slate-400">(Flashing)</span>
+      </h2>
+      <button
+        class="text-slate-400 hover:text-accent text-sm"
+        title="Filter settings"
+        onclick="openFilter('momentum')"
+      >
+        ⚙️
+      </button>
+    </div>
+
+    <div class="overflow-auto thin-scroll flex-grow">
+      <table class="w-full text-xs md:text-sm">
+        <thead class="text-slate-400 border-b border-slate-800">
+          <tr class="text-left">
+            <th class="py-1 pr-3 w-[72px]">Symbol</th>
+            <th class="py-1 pr-2">Price</th>
+            <th class="py-1 pr-2">% Chg</th>
+            <th class="py-1 pr-2">5m</th>
+            <th class="py-1 pr-2">Float</th>
+            <th class="py-1 pr-2">Volume</th>
+            <th class="py-1 pr-2">Spr</th>
+            <th class="py-1">Time</th>
+          </tr>
+        </thead>
+
+        <tbody id="momentum-body">
+          <tr>
+            <td colspan="8" class="py-2 text-slate-500 text-center">
+              Loading…
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+
+    <!-- HOD -->
     <section class="card">
       <div class="flex justify-between items-center mb-3">
-        <h2 class="text-base font-semibold text-accent">Momentum (Flashing)</h2>
-        <button class="text-slate-400 hover:text-accent text-sm" title="Filter settings" onclick="openFilter('momentum')">⚙️</button>
+        <h2 class="text-base font-semibold text-accent">
+          High of Day <span class="text-xs text-slate-400">(HOD)</span>
+        </h2>
+        <button
+          class="text-slate-400 hover:text-accent text-sm"
+          title="Filter settings"
+          onclick="openFilter('hod')"
+        >
+          ⚙️
+        </button>
       </div>
+
       <div class="overflow-auto thin-scroll flex-grow">
         <table class="w-full text-xs md:text-sm">
           <thead class="text-slate-400 border-b border-slate-800">
             <tr class="text-left">
-              <th class="py-1 pr-2">Symbol</th>
+              <th class="py-1 pr-3 w-[72px]">Symbol</th>
               <th class="py-1 pr-2">Price</th>
               <th class="py-1 pr-2">% Chg</th>
-              <th class="py-1 pr-2">5m</th>
               <th class="py-1 pr-2">Float</th>
+              <th class="py-1 pr-2">Spr</th>
               <th class="py-1 pr-2">Volume</th>
-              <th class="py-1 pr-2">Spr(%)</th>
               <th class="py-1">Time</th>
             </tr>
           </thead>
-          <tbody id="momentum-body">
-            <tr><td colspan="8" class="py-2 text-slate-500 text-center">Loading…</td></tr>
+
+          <tbody id="hod-body">
+            <tr>
+              <td colspan="7" class="py-2 text-slate-500 text-center">
+                Loading…
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <!-- HOD -->
-    <section class="card">
-      <div class="flex justify-between items-center mb-3">
-        <h2 class="text-base font-semibold text-accent">High of Day (HOD)</h2>
-        <button class="text-slate-400 hover:text-accent text-sm" title="Filter settings" onclick="openFilter('hod')">⚙️</button>
-      </div>
-      <div class="overflow-auto thin-scroll flex-grow">
-        <table class="w-full text-xs md:text-sm">
-          <thead class="text-slate-400 border-b border-slate-800">
-            <tr class="text-left">
-              <th class="py-1 pr-2">Symbol</th>
-              <th class="py-1 pr-2">Price</th>
-              <th class="py-1 pr-2">% Chg</th>
-              <th class="py-1 pr-2">Float</th>
-              <th class="py-1 pr-2">Spr(%)</th>
-              <th class="py-1 pr-2">Volume</th>
-              <th class="py-1">Time</th>
-            </tr>
-          </thead>
-          <tbody id="hod-body">
-            <tr><td colspan="7" class="py-2 text-slate-500 text-center">Loading…</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
 
     <!-- Chart 1m -->
     <section class="card chart-card">
